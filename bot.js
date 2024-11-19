@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, AttachmentBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const schedule = require('node-schedule');
 
@@ -30,6 +30,7 @@ class CryptoCommentator {
             new SlashCommandBuilder()
                 .setName('check')
                 .setDescription('Check if the crypto commentator is live!')
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
                 .toJSON(),
             new SlashCommandBuilder()
                 .setName('start')
@@ -38,10 +39,12 @@ class CryptoCommentator {
                     option.setName('address')
                         .setDescription('The Solana token address to track')
                         .setRequired(true))
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
                 .toJSON(),
             new SlashCommandBuilder()
                 .setName('end')
                 .setDescription('Stop tracking the current token')
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
                 .toJSON()
         ];
 
@@ -61,6 +64,9 @@ class CryptoCommentator {
     async setupCommands() {
         this.client.on('interactionCreate', async interaction => {
             if (!interaction.isChatInputCommand()) return;
+
+            // Check permissions first
+            if (!await this.checkAdminPermissions(interaction)) return;
 
             switch (interaction.commandName) {
                 case 'check':
@@ -82,7 +88,37 @@ class CryptoCommentator {
                     const address = interaction.options.getString('address');
                     
                     try {
-                        // First, acknowledge the command
+                        // Generate opening message
+                        const openingMessages = [
+                            "🎭 LADIES AND GENTLEMEN! In the red corner, we have a DEGEN with nothing but HOPES AND DREAMS! In the blue corner, the undefeated champion: CRUSHING MARKET REALITY! 🥊",
+                            "🎪 STEP RIGHT UP, FOLKS! Watch as one brave soul's dream of generational wealth goes toe-to-toe with the harsh mistress of market volatility! 🎯",
+                            "🎪 WELCOME TO THE GREATEST SHOW IN CRYPTO! One degen's journey from zero to hero... or zero to zero! Place your bets! 🎲",
+                            "🎭 IN TODAY'S EPISODE: A tale of greed, glory, and the never-ending quest for financial freedom! Will our hero prevail?! 🏆",
+                            "🎪 BEHOLD! The age-old battle between hopium and reality! Witness one degen's attempt to defy the odds! 💫",
+                            "🎭 THE STAGE IS SET! One trader's dream of Lambos and luxury faces off against the cold, hard reality of the markets! 🚗",
+                            "🎪 GATHER 'ROUND! Watch as pure, unfiltered hopium collides with the immovable force of market dynamics! 💥",
+                            "🎭 TONIGHT'S MAIN EVENT: Diamond hands versus paper hands! Will our hero HODL their way to victory?! 💎",
+                            "🎪 THE ETERNAL STRUGGLE CONTINUES! One trader's moonshot dreams versus the gravity of market reality! 🌙",
+                            "🎭 WELCOME TO THE THUNDERDOME! Where one degen's 'This time it's different!' meets 'Sir, this is a Wendy's!' 🍔"
+                        ];
+
+                        const openingMessage = openingMessages[Math.floor(Math.random() * openingMessages.length)];
+                        
+                        // Send and pin the opening message
+                        const initialMessage = await interaction.channel.send(`
+${openingMessage}
+
+📊 **TOKEN ADDRESS**: \`${address}\`
+⏰ **STARTING TIME**: ${new Date().toLocaleString()}
+🎯 **MISSION**: Turn hopium into generational wealth
+🏆 **ODDS**: Better than zero, worse than you think
+
+*Grab your popcorn folks, this is going to be a wild ride!* 🍿
+                        `);
+                        
+                        await initialMessage.pin();
+                        
+                        // Now send the start confirmation
                         await interaction.reply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! Updates every minute! LET'S GET THIS PARTY STARTED! 🎉`);
                         
                         this.tokenSymbol = address;
@@ -259,29 +295,18 @@ class CryptoCommentator {
         const formatUSD = (num) => `$${parseFloat(num).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
         const formatPercent = (str) => str ? str.replace('%', '') + '%' : '0%';
         
-        const commentary = `🎙️ **LIVE CRYPTO UPDATE FOR ${priceData.name}** 🎙️
+        const commentary = `🎙️ **${priceData.name}** @ ${formatUSD(priceData.price)}
 
-💰 **Price**: ${formatUSD(priceData.price)}
-📊 **Price Changes**:
-• 5m:  ${formatPercent(priceData.changes['5m'])}
-• 15m: ${formatPercent(priceData.changes['15m'])}
-• 30m: ${formatPercent(priceData.changes['30m'])}
-• 1h:  ${formatPercent(priceData.changes['1h'])}
-• 6h:  ${formatPercent(priceData.changes['6h'])}
-• 24h: ${formatPercent(priceData.changes['24h'])}
-
-📈 **Trading Activity (24h)**:
-• Volume: ${formatUSD(priceData.volume24h)}
-• Swaps: ${priceData.swapCount24h.toLocaleString()}
-• Buyers: ${priceData.stats24h.buyers_count.toLocaleString()}
-• Sellers: ${priceData.stats24h.sellers_count.toLocaleString()}
-
-💎 **Pool Metrics**:
-• FDV: ${formatUSD(priceData.fdv)}
-• Liquidity: ${formatUSD(priceData.reserveUSD)}
-• GT Score: ${priceData.gtScore.toFixed(2)}/100
-
-🗳️ **Sentiment**: ${priceData.sentiment.up_percentage.toFixed(1)}% Bullish (${priceData.sentiment.total} votes)
+\`\`\`
+Price Changes | Trading (24h)
+------------- | -------------
+5m:  ${formatPercent(priceData.changes['5m']).padEnd(8)} | Vol:  ${formatUSD(priceData.volume24h)}
+15m: ${formatPercent(priceData.changes['15m']).padEnd(8)} | Swaps: ${priceData.swapCount24h.toLocaleString()}
+1h:  ${formatPercent(priceData.changes['1h']).padEnd(8)} | Buys: ${priceData.stats24h.buyers_count.toLocaleString()}
+6h:  ${formatPercent(priceData.changes['6h']).padEnd(8)} | Sells: ${priceData.stats24h.sellers_count.toLocaleString()}
+24h: ${formatPercent(priceData.changes['24h']).padEnd(8)} | Score: ${priceData.gtScore.toFixed(1)}/100
+\`\`\`
+💎 FDV: ${formatUSD(priceData.fdv)} | 🌊 Liq: ${formatUSD(priceData.reserveUSD)} | 🗳️ Sentiment: ${priceData.sentiment.up_percentage.toFixed(1)}% (${priceData.sentiment.total} votes)
 
 ${this.generateExcitingComment(priceData)}`;
 
@@ -380,6 +405,22 @@ ${this.generateExcitingComment(priceData)}`;
             this.priceHistory.prices.shift();
         }
 
+        // Determine color based on last price movement
+        let lineColor;
+        if (this.priceHistory.prices.length >= 2) {
+            const lastPrice = this.priceHistory.prices[this.priceHistory.prices.length - 1];
+            const previousPrice = this.priceHistory.prices[this.priceHistory.prices.length - 2];
+            if (lastPrice > previousPrice) {
+                lineColor = '#00ff00'; // Green
+            } else if (lastPrice < previousPrice) {
+                lineColor = '#ff0000'; // Red
+            } else {
+                lineColor = '#ffff00'; // Yellow
+            }
+        } else {
+            lineColor = '#00ff00'; // Default to green
+        }
+
         const configuration = {
             type: 'line',
             data: {
@@ -389,10 +430,30 @@ ${this.generateExcitingComment(priceData)}`;
                 datasets: [{
                     label: `${priceData.name} Price`,
                     data: this.priceHistory.prices,
-                    borderColor: '#00ff00',
+                    segment: {
+                        borderColor: ctx => {
+                            // Color only the last segment
+                            if (ctx.p1DataIndex === this.priceHistory.prices.length - 2) {
+                                return lineColor;
+                            }
+                            return '#00ff00'; // Default color for other segments
+                        }
+                    },
                     backgroundColor: '#00ff00',
-                    pointBackgroundColor: '#00ff00',
-                    pointBorderColor: '#00ff00',
+                    pointBackgroundColor: ctx => {
+                        // Color the last point based on movement
+                        if (ctx.dataIndex === this.priceHistory.prices.length - 1) {
+                            return lineColor;
+                        }
+                        return '#00ff00';
+                    },
+                    pointBorderColor: ctx => {
+                        // Color the last point based on movement
+                        if (ctx.dataIndex === this.priceHistory.prices.length - 1) {
+                            return lineColor;
+                        }
+                        return '#00ff00';
+                    },
                     tension: 0.1,
                     fill: false,
                     borderWidth: 2,
@@ -454,6 +515,17 @@ ${this.generateExcitingComment(priceData)}`;
         }
 
         return this.chartGenerator.renderToBuffer(configuration);
+    }
+
+    async checkAdminPermissions(interaction) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({
+                content: '❌ You need Administrator permissions to use this command!',
+                ephemeral: true
+            });
+            return false;
+        }
+        return true;
     }
 
     //

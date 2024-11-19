@@ -25,6 +25,18 @@ class CryptoCommentator {
             new SlashCommandBuilder()
                 .setName('check')
                 .setDescription('Check if the crypto commentator is live!')
+                .toJSON(),
+            new SlashCommandBuilder()
+                .setName('start')
+                .setDescription('Start tracking a Solana token')
+                .addStringOption(option => 
+                    option.setName('address')
+                        .setDescription('The Solana token address to track')
+                        .setRequired(true))
+                .toJSON(),
+            new SlashCommandBuilder()
+                .setName('end')
+                .setDescription('Stop tracking the current token')
                 .toJSON()
         ];
 
@@ -52,19 +64,54 @@ class CryptoCommentator {
         this.client.on('interactionCreate', async interaction => {
             if (!interaction.isChatInputCommand()) return;
 
-            if (interaction.commandName === 'check') {
-                const uptime = this.client.uptime;
-                const hours = Math.floor(uptime / 3600000);
-                const minutes = Math.floor((uptime % 3600000) / 60000);
+            switch (interaction.commandName) {
+                case 'check':
+                    const uptime = this.client.uptime;
+                    const hours = Math.floor(uptime / 3600000);
+                    const minutes = Math.floor((uptime % 3600000) / 60000);
 
-                await interaction.reply({
-                    content: `🎙️ **CRYPTO COMMENTATOR STATUS CHECK!** 🎙️\n
-                    ABSOLUTELY FANTASTIC NEWS, FOLKS! I'M ALIVE AND KICKING! 🎉\n
-                    🕒 Uptime: ${hours}h ${minutes}m\n
-                    🎯 Tracking: ${this.tokenSymbol || 'No token set'}\n
-                    📢 Broadcasting to: ${this.channelId ? `<#${this.channelId}>` : 'No channel set'}`,
-                    ephemeral: false
-                });
+                    await interaction.reply({
+                        content: `🎙️ **CRYPTO COMMENTATOR STATUS CHECK!** 🎙️\n
+                        ABSOLUTELY FANTASTIC NEWS, FOLKS! I'M ALIVE AND KICKING! 🎉\n
+                        🕒 Uptime: ${hours}h ${minutes}m\n
+                        🎯 Tracking: ${this.tokenSymbol || 'No token set'}\n
+                        📢 Broadcasting to: ${this.channelId ? `<#${this.channelId}>` : 'No channel set'}`,
+                        ephemeral: false
+                    });
+                    break;
+
+                case 'start':
+                    const address = interaction.options.getString('address');
+                    
+                    try {
+                        // First, acknowledge the command
+                        await interaction.reply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! LET'S GET THIS PARTY STARTED! 🎉`);
+                        
+                        this.tokenSymbol = address;
+                        this.channelId = interaction.channelId;
+                        
+                        // Then immediately send the first update
+                        await this.sendUpdate();
+                    } catch (error) {
+                        console.error('Error during start command:', error);
+                        this.tokenSymbol = null;
+                        this.channelId = null;
+                        await interaction.followUp('❌ Error starting tracking. Please check the token address and try again!');
+                    }
+                    break;
+
+                case 'end':
+                    if (!this.tokenSymbol || !this.channelId) {
+                        await interaction.reply('❌ No token currently being tracked!');
+                        return;
+                    }
+
+                    const oldToken = this.tokenSymbol;
+                    this.tokenSymbol = null;
+                    this.channelId = null;
+
+                    await interaction.reply(`🎙️ THAT'S ALL FOLKS! Stopped tracking ${oldToken}! Thanks for tuning in! 👋`);
+                    break;
             }
         });
     }

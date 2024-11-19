@@ -17,8 +17,13 @@ class CryptoCommentator {
         this.chartGenerator = new ChartJSNodeCanvas({
             width: 800,
             height: 400,
-            backgroundColour: '#ffffff'
+            backgroundColour: '#000000'
         });
+
+        this.priceHistory = {
+            timestamps: [],
+            prices: []
+        };
 
         // Add commands collection to track slash commands
         this.commands = [
@@ -140,24 +145,125 @@ class CryptoCommentator {
 
     async sendUpdate() {
         try {
+            // First verify we can access the channel
+            let channel;
+            try {
+                channel = await this.client.channels.fetch(this.channelId);
+                
+                // Check if we have the required permissions
+                const permissions = channel.permissionsFor(this.client.user);
+                if (!permissions || !permissions.has(['ViewChannel', 'SendMessages', 'AttachFiles'])) {
+                    console.error(`Missing required permissions in channel ${this.channelId}`);
+                    await channel.send('❌ I need permissions to view channel, send messages, and attach files!');
+                    return;
+                }
+            } catch (error) {
+                console.error(`Cannot access channel ${this.channelId}:`, error);
+                // Reset tracking since we can't access the channel
+                this.tokenSymbol = null;
+                this.channelId = null;
+                return;
+            }
+
             const priceData = await this.fetchPriceData();
             const chartBuffer = await this.generateChart(priceData);
-            const priceChange = this.calculatePriceChange(priceData);
-            const commentary = this.generateCommentary(priceChange);
+            const commentary = this.generateCommentary(priceData);
 
-            const channel = await this.client.channels.fetch(this.channelId);
             const attachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
 
             await channel.send({
-                content: `🎙️ **LIVE CRYPTO UPDATE** 🎙️\n${commentary}`,
+                content: commentary,
                 files: [attachment]
             });
         } catch (error) {
             console.error('Error sending update:', error);
+            if (error.code === 50001 || error.code === 50013) {
+                console.error('Bot lacks required permissions - stopping tracking');
+                this.tokenSymbol = null;
+                this.channelId = null;
+            }
         }
     }
 
-    generateCommentary(priceChange) {
+    async fetchPriceData() {
+        try {
+            const formattedToken = this.tokenSymbol.trim();
+            console.log(`Fetching data for token: ${formattedToken}`);
+            
+            const url = `https://app.geckoterminal.com/api/p1/solana/pools/${formattedToken}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.errors) {
+                throw new Error(`Token not found on GeckoTerminal: ${data.errors[0]?.title || 'Unknown error'}`);
+            }
+
+            const attributes = data.data.attributes;
+            const priceChanges = attributes.price_percent_changes || {};
+            const historicalData = attributes.historical_data || {};
+            
+            return {
+                name: attributes.name,
+                price: parseFloat(attributes.price_in_usd),
+                priceChange24h: attributes.price_percent_change,
+                volume24h: attributes.from_volume_in_usd,
+                fdv: attributes.fully_diluted_valuation,
+                reserveUSD: attributes.reserve_in_usd,
+                swapCount24h: attributes.swap_count_24h,
+                sentiment: attributes.sentiment_votes,
+                changes: {
+                    '5m': priceChanges.last_5m,
+                    '15m': priceChanges.last_15m,
+                    '30m': priceChanges.last_30m,
+                    '1h': priceChanges.last_1h,
+                    '6h': priceChanges.last_6h,
+                    '24h': priceChanges.last_24h
+                },
+                stats24h: historicalData.last_24h,
+                stats1h: historicalData.last_1h,
+                gtScore: attributes.gt_score
+            };
+        } catch (error) {
+            console.error('Error fetching price data:', error);
+            throw error;
+        }
+    }
+
+    generateCommentary(priceData) {
+        // Format numbers for better readability
+        const formatUSD = (num) => `$${parseFloat(num).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+        const formatPercent = (str) => str ? str.replace('%', '') + '%' : '0%';
+        
+        const commentary = `🎙️ **LIVE CRYPTO UPDATE FOR ${priceData.name}** 🎙️
+
+💰 **Price**: ${formatUSD(priceData.price)}
+📊 **Price Changes**:
+• 5m:  ${formatPercent(priceData.changes['5m'])}
+• 15m: ${formatPercent(priceData.changes['15m'])}
+• 30m: ${formatPercent(priceData.changes['30m'])}
+• 1h:  ${formatPercent(priceData.changes['1h'])}
+• 6h:  ${formatPercent(priceData.changes['6h'])}
+• 24h: ${formatPercent(priceData.changes['24h'])}
+
+📈 **Trading Activity (24h)**:
+• Volume: ${formatUSD(priceData.volume24h)}
+• Swaps: ${priceData.swapCount24h.toLocaleString()}
+• Buyers: ${priceData.stats24h.buyers_count.toLocaleString()}
+• Sellers: ${priceData.stats24h.sellers_count.toLocaleString()}
+
+💎 **Pool Metrics**:
+• FDV: ${formatUSD(priceData.fdv)}
+• Liquidity: ${formatUSD(priceData.reserveUSD)}
+• GT Score: ${priceData.gtScore.toFixed(2)}/100
+
+🗳️ **Sentiment**: ${priceData.sentiment.up_percentage.toFixed(1)}% Bullish (${priceData.sentiment.total} votes)
+
+${this.generateExcitingComment(parseFloat(priceData.changes['5m']))}`;
+
+        return commentary;
+    }
+
+    generateExcitingComment(priceChange5m) {
         const excitementPhrases = [
             "HOLY SMOKES FOLKS!",
             "CAN YOU BELIEVE WHAT WE'RE SEEING?!",
@@ -168,15 +274,104 @@ class CryptoCommentator {
 
         const randomPhrase = excitementPhrases[Math.floor(Math.random() * excitementPhrases.length)];
 
-        if (priceChange > 5) {
-            return `${randomPhrase} ${this.tokenSymbol} IS ON AN ABSOLUTE TEAR! UP ${priceChange.toFixed(2)}% IN THE LAST 15 MINUTES! THE BULLS ARE RUNNING WILD! 🚀🔥`;
-        } else if (priceChange > 0) {
-            return `OH BOY OH BOY! ${this.tokenSymbol} is showing some life! Up ${priceChange.toFixed(2)}%! Could this be the start of something MAGICAL?! ✨`;
-        } else if (priceChange > -5) {
-            return `FOLKS, ${this.tokenSymbol} is taking a breather, down ${Math.abs(priceChange).toFixed(2)}%! But don't count them out yet! This is crypto after all! 💪`;
+        if (priceChange5m > 5) {
+            return `${randomPhrase} WE'RE MOONING! 🚀🔥`;
+        } else if (priceChange5m > 0) {
+            return `Looking bullish! Let's see where this goes! ✨`;
+        } else if (priceChange5m > -5) {
+            return `Holding steady! Stay tuned for more action! 💪`;
         } else {
-            return `GOOD GRIEF! ${this.tokenSymbol} is feeling the pressure! Down ${Math.abs(priceChange).toFixed(2)}%! Is this the drama we've been waiting for?! 😱`;
+            return `Dip alert! Is this a buying opportunity?! 👀`;
         }
+    }
+
+    async generateChart(priceData) {
+        // Store the new price data point
+        const timestamp = new Date();
+        this.priceHistory.timestamps.push(timestamp);
+        this.priceHistory.prices.push(priceData.price);
+
+        // Keep only last 24 hours of data (288 5-minute intervals)
+        const MAX_POINTS = 288;
+        if (this.priceHistory.timestamps.length > MAX_POINTS) {
+            this.priceHistory.timestamps.shift();
+            this.priceHistory.prices.shift();
+        }
+
+        const configuration = {
+            type: 'line',
+            data: {
+                labels: this.priceHistory.timestamps.map(ts => 
+                    ts.toLocaleTimeString()
+                ),
+                datasets: [{
+                    label: `${priceData.name} Price`,
+                    data: this.priceHistory.prices,
+                    borderColor: '#00ff00',
+                    backgroundColor: '#00ff00',
+                    pointBackgroundColor: '#00ff00',
+                    pointBorderColor: '#00ff00',
+                    tension: 0.1,
+                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            color: 'white',
+                            callback: function(value) {
+                                return '$' + value.toFixed(6);
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: 'white',
+                            maxRotation: 45,
+                            minRotation: 45
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: `${priceData.name} Price History`,
+                        color: 'white',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: 'white'
+                        }
+                    }
+                }
+            }
+        };
+
+        // Make sure chartGenerator is initialized with black background
+        if (!this.chartGenerator) {
+            this.chartGenerator = new ChartJSNodeCanvas({
+                width: 800,
+                height: 400,
+                backgroundColour: '#000000'
+            });
+        }
+
+        return this.chartGenerator.renderToBuffer(configuration);
     }
 
     //

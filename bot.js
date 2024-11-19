@@ -45,6 +45,9 @@ class CryptoCommentator {
                 .toJSON()
         ];
 
+        this.updateInterval = '*/1 * * * *';
+        this.updateJob = null;
+
         this.setupBot();
         this.setupCommands();
     }
@@ -52,17 +55,7 @@ class CryptoCommentator {
     setupBot() {
         this.client.once('ready', () => {
             console.log('Crypto Commentator is LIVE! 🎙️');
-            this.startUpdateLoop();
         });
-
-        // Schedule updates every 15 minutes
-        this.startUpdateLoop = () => {
-            schedule.scheduleJob('*/15 * * * *', async () => {
-                if (this.tokenSymbol && this.channelId) {
-                    await this.sendUpdate();
-                }
-            });
-        };
     }
 
     async setupCommands() {
@@ -90,17 +83,37 @@ class CryptoCommentator {
                     
                     try {
                         // First, acknowledge the command
-                        await interaction.reply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! LET'S GET THIS PARTY STARTED! 🎉`);
+                        await interaction.reply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! Updates every minute! LET'S GET THIS PARTY STARTED! 🎉`);
                         
                         this.tokenSymbol = address;
                         this.channelId = interaction.channelId;
                         
-                        // Then immediately send the first update
+                        // Clear any existing update job
+                        if (this.updateJob) {
+                            this.updateJob.cancel();
+                        }
+                        
+                        // Start the update loop
+                        this.updateJob = schedule.scheduleJob(this.updateInterval, async () => {
+                            if (this.tokenSymbol && this.channelId) {
+                                try {
+                                    await this.sendUpdate();
+                                } catch (error) {
+                                    console.error('Error in update loop:', error);
+                                }
+                            }
+                        });
+                        
+                        // Send first update immediately
                         await this.sendUpdate();
                     } catch (error) {
                         console.error('Error during start command:', error);
                         this.tokenSymbol = null;
                         this.channelId = null;
+                        if (this.updateJob) {
+                            this.updateJob.cancel();
+                            this.updateJob = null;
+                        }
                         await interaction.followUp('❌ Error starting tracking. Please check the token address and try again!');
                     }
                     break;
@@ -114,6 +127,18 @@ class CryptoCommentator {
                     const oldToken = this.tokenSymbol;
                     this.tokenSymbol = null;
                     this.channelId = null;
+                    
+                    // Cancel the update job
+                    if (this.updateJob) {
+                        this.updateJob.cancel();
+                        this.updateJob = null;
+                    }
+
+                    // Clear price history
+                    this.priceHistory = {
+                        timestamps: [],
+                        prices: []
+                    };
 
                     await interaction.reply(`🎙️ THAT'S ALL FOLKS! Stopped tracking ${oldToken}! Thanks for tuning in! 👋`);
                     break;

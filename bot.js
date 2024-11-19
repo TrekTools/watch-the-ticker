@@ -283,30 +283,87 @@ class CryptoCommentator {
 
 🗳️ **Sentiment**: ${priceData.sentiment.up_percentage.toFixed(1)}% Bullish (${priceData.sentiment.total} votes)
 
-${this.generateExcitingComment(parseFloat(priceData.changes['5m']))}`;
+${this.generateExcitingComment(priceData)}`;
 
         return commentary;
     }
 
-    generateExcitingComment(priceChange5m) {
-        const excitementPhrases = [
-            "HOLY SMOKES FOLKS!",
-            "CAN YOU BELIEVE WHAT WE'RE SEEING?!",
-            "ABSOLUTELY INCREDIBLE!",
-            "WHAT A MOMENT IN CRYPTO HISTORY!",
-            "MY COFFEE CUP IS SHAKING WITH EXCITEMENT!"
+    generateExcitingComment(priceData) {
+        const positiveComments = [
+            "BOOM! What a move folks! This is the kind of action we live for! 🚀",
+            "They're on FIRE! You can't teach this kind of momentum! 🔥",
+            "Ladies and gentlemen, we are witnessing GREATNESS! 👑",
+            "This is what champions are made of! Absolutely ELECTRIC performance! ⚡",
+            "They've done their homework and it's PAYING OFF! 📚",
+            "The crowd is going WILD! Can you feel the energy?! 🎉",
+            "That's what I call EXECUTING THE GAMEPLAN! 📋",
+            "They're making it look EASY out there! 💪",
+            "This is a MASTERCLASS in price action! 📈",
+            "They came to PLAY today, folks! 🎯",
+            "UNSTOPPABLE! They're in a league of their own! 🏆",
+            "This is TEXTBOOK execution! Beautiful to watch! 📖",
+            "They're COOKING with gas now! 🔥",
+            "The momentum is UNDENIABLE! 🌊",
+            "What a SPECTACULAR display of strength! 💪"
         ];
 
-        const randomPhrase = excitementPhrases[Math.floor(Math.random() * excitementPhrases.length)];
+        const neutralComments = [
+            "We've got ourselves a real CHESS MATCH here, folks! ♟️",
+            "Both bulls and bears showing RESPECT for each other! 🤝",
+            "This is anyone's game right now! 🎲",
+            "They're feeling each other out, looking for an opening! 👀",
+            "The tension is PALPABLE! 😤",
+            "This is what we call a STRATEGIC battle! 🧠",
+            "They're playing the long game here, folks! ⏳",
+            "Every move counts in this situation! ⚖️",
+            "We're seeing some VETERAN moves here! 🎯",
+            "This is a CLASSIC matchup unfolding! 🏛️",
+            "The plot thickens! What a fascinating development! 🎭",
+            "Both sides showing tremendous DISCIPLINE! 📊",
+            "This is a TEXTBOOK trading range! 📐",
+            "The market is taking a breather, but stay tuned! ⏸️",
+            "We're at a crucial DECISION POINT! 🔄"
+        ];
 
-        if (priceChange5m > 5) {
-            return `${randomPhrase} WE'RE MOONING! 🚀🔥`;
-        } else if (priceChange5m > 0) {
-            return `Looking bullish! Let's see where this goes! ✨`;
-        } else if (priceChange5m > -5) {
-            return `Holding steady! Stay tuned for more action! 💪`;
+        const negativeComments = [
+            "OUCH! That's gonna leave a mark! 🤕",
+            "They're on the ropes, but don't count them out yet! 🥊",
+            "This is a TEST OF CHARACTER right here! 💪",
+            "They're in UNFAMILIAR TERRITORY! Can they adjust? 🗺️",
+            "This is where champions show their RESILIENCE! 🛡️",
+            "They're taking some HEAVY HITS, but still standing! 🥊",
+            "This is a GUT CHECK moment! 😤",
+            "They need to WEATHER THE STORM! ⛈️",
+            "Time to dig DEEP and show what they're made of! ⛏️",
+            "This is where LEGENDS are born, folks! 🌟",
+            "They're down but not out! Never count out a champion! 👊",
+            "This is when you earn your stripes! 🦓",
+            "Sometimes you need to take a step back to leap forward! 🦘",
+            "They're in survival mode, but that's when they're most dangerous! 🐯",
+            "This is CHARACTER BUILDING time! 🏗️"
+        ];
+
+        const extremeComments = [
+            "I CAN'T BELIEVE WHAT I'M SEEING! This is UNPRECEDENTED! 🤯",
+            "HOLY SMOKES! This will go down in the history books! 📚",
+            "GREAT GOOGLY MOOGLY! Have you ever seen anything like this?! 😱",
+            "STOP THE PRESSES! This is one for the ages! 🗞️",
+            "MY WORD! This is why you never leave your seat, folks! 💺"
+        ];
+
+        // Calculate price change percentage from 5m data
+        const priceChange = parseFloat(priceData.changes['5m']?.replace('%', '') || 0);
+
+        // Select comment based on price action
+        if (Math.abs(priceChange) > 10) {
+            // Extreme moves get special comments
+            return extremeComments[Math.floor(Math.random() * extremeComments.length)];
+        } else if (priceChange > 2) {
+            return positiveComments[Math.floor(Math.random() * positiveComments.length)];
+        } else if (priceChange < -2) {
+            return negativeComments[Math.floor(Math.random() * negativeComments.length)];
         } else {
-            return `Dip alert! Is this a buying opportunity?! 👀`;
+            return neutralComments[Math.floor(Math.random() * neutralComments.length)];
         }
     }
 

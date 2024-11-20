@@ -318,11 +318,10 @@ Duration: ${duration} minutes
                 files: [chartAttachment]
             });
 
-            // Then send the commentator with quote and P&L
+            // Send commentator image first, then commentary and P&L
             await channel.send({
-                content: `> *"${this.generateExcitingComment(priceData)}"*
-${pnlMessage}`,
-                files: [commentaryAttachment]
+                files: [commentaryAttachment],
+                content: `*"${this.generateExcitingComment(priceData)}"*\n${pnlMessage}`
             });
 
         } catch (error) {

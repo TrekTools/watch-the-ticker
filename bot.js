@@ -22,8 +22,8 @@ class CryptoCommentator {
             backgroundColour: '#000000'
         });
 
-        this.commentatorWidth = 120;  // Width in pixels
-        this.commentatorHeight = 75; // Height in pixels
+        this.commentatorWidth = 180;  // Width in pixels
+        this.commentatorHeight = 135; // Height in pixels
 
         this.priceHistory = {
             timestamps: [],
@@ -300,11 +300,6 @@ Duration: ${duration} minutes
             const pnlAmount = this.currentValue - this.initialInvestment;
             const pnlPercent = ((this.currentValue / this.initialInvestment - 1) * 100).toFixed(2);
 
-            // Format P&L message with color
-            const pnlMessage = pnlAmount >= 0 
-                ? `\`\`\`diff\n+$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``
-                : `\`\`\`diff\n-$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``;
-
             // Create attachments
             const chartAttachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
             const commentaryAttachment = new AttachmentBuilder(
@@ -318,9 +313,18 @@ Duration: ${duration} minutes
                 files: [chartAttachment]
             });
 
-            // Send commentator image first, then commentary and P&L
+            // Format P&L message with color
+            const pnlMessage = pnlAmount >= 0 
+                ? `\`\`\`diff\n+$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``
+                : `\`\`\`diff\n-$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``;
+
+            // Send commentator image, then commentary and P&L in a single message
             await channel.send({
-                files: [commentaryAttachment],
+                files: [commentaryAttachment]
+            });
+
+            // Send commentary and P&L separately
+            await channel.send({
                 content: `*"${this.generateExcitingComment(priceData)}"*\n${pnlMessage}`
             });
 
@@ -544,29 +548,271 @@ Price Changes | Trading (24h)      | P&L Status
 
     generateExcitingComment(priceData) {
         const positiveComments = [
-            "BOOM! What a move folks! This is the kind of action we live for! 🚀",
-            "They're on FIRE! You can't teach this kind of momentum! 🔥",
-            "Ladies and gentlemen, we are witnessing GREATNESS! 👑",
-            "This is what champions are made of! Absolutely ELECTRIC performance! ⚡",
-            "They've done their homework and it's PAYING OFF! 📚",
-            "The crowd is going WILD! Can you feel the energy?! 🎉",
-            "That's what I call EXECUTING THE GAMEPLAN! 📋",
-            "They're making it look EASY out there! 💪",
+            // Momentum & Energy
+            "BOOM! The crowd is ELECTRIC! This is what we came to see! 🚀",
+            "They're COOKING with gas now, folks! Pure MOMENTUM! 🔥",
+            "This is CHAMPIONSHIP caliber movement right here! 🏆",
+            "The ENERGY is off the charts! Can you feel it?! ⚡",
+            "What a SPECTACULAR display of strength! 💪",
+            "They're making it look EASY out there! 🎯",
             "This is a MASTERCLASS in price action! 📈",
-            "They came to PLAY today, folks! 🎯"
+            "UNSTOPPABLE force meets movable object! 🚄",
+            "They came to DOMINATE and it shows! 👊",
+            "Pure POETRY in motion, folks! 🎭",
+
+            // Victory & Achievement
+            "This is what WINNERS look like in action! 🥇",
+            "A TEXTBOOK example of execution! 📚",
+            "They're REWRITING the playbook today! ✍️",
+            "HISTORY in the making, ladies and gentlemen! 📜",
+            "This is VETERAN moves we're seeing! 🎖️",
+            "They're in the ZONE and loving it! 🎯",
+            "PICTURE PERFECT performance! 🖼️",
+            "This is how LEGENDS are made! 👑",
+            "They're CRUSHING it out there! 🔨",
+            "A CLINIC in market dominance! 🏫",
+
+            // Strategy & Skill
+            "They've done their HOMEWORK and it shows! 📝",
+            "This is CALCULATED aggression! 🧮",
+            "MASTERFUL strategy on display! 🧠",
+            "They're playing CHESS while others play checkers! ♟️",
+            "SURGICAL precision in these moves! 🔪",
+            "This is PROFESSIONAL grade execution! 🎓",
+            "They're making the SMART plays! 🤓",
+            "TACTICAL brilliance on display! 🎯",
+            "This is EXPERT level maneuvering! 🎮",
+            "They're READING the market perfectly! 📖",
+
+            // Team Spirit & Support
+            "The WHOLE TEAM is firing on all cylinders! 🏎️",
+            "Look at that COMMUNITY support! 🤝",
+            "They're RALLYING the troops! 📢",
+            "This is TEAM SPIRIT at its finest! 🌟",
+            "The MOMENTUM is contagious! 🦠",
+            "Everyone's WORKING TOGETHER! 🤼",
+            "This is UNITY in action! 🔄",
+            "The SYNERGY is incredible! ⚡",
+            "They're ALL IN this together! 🎲",
+            "COLLECTIVE effort paying off! 🎪",
+
+            // Breaking Records
+            "They're SHATTERING expectations! 💥",
+            "Record books? REWRITE THEM! 📚",
+            "This is UNPRECEDENTED stuff! 🎇",
+            "They're BREAKING all the records! 📊",
+            "HISTORIC movement happening! 🏛️",
+            "This is GROUNDBREAKING action! 🏗️",
+            "They're setting NEW STANDARDS! 📏",
+            "BENCHMARK performance right here! 📈",
+            "This is NEXT LEVEL stuff! 🆙",
+            "They're RAISING THE BAR! 🏋️‍♂️",
+
+            // Market Impact
+            "They're DOMINATING the field! 🏅",
+            "This is MARKET-MOVING action! 📊",
+            "They're LEADING the charge! ⚔️",
+            "IMPRESSIVE display of strength! 💪",
+            "This is GAME-CHANGING movement! 🎮",
+            "They're SETTING THE PACE! 🏃‍♂️",
+            "POWERFUL performance today! ⚡",
+            "This is TREND-SETTING stuff! 📈",
+            "They're MAKING WAVES! 🌊",
+            "INFLUENTIAL moves happening! 🎯",
+
+            // Celebration & Joy
+            "The crowd goes WILD! 🎉",
+            "This is CELEBRATION time! 🎊",
+            "They're DANCING in the streets! 💃",
+            "VICTORY lap incoming! 🏎️",
+            "This is PARTY time! 🎈",
+            "They're LOVING life right now! 😊",
+            "JUBILATION in the air! 🎭",
+            "This is FESTIVAL atmosphere! 🎪",
+            "They're RIDING HIGH! 🎢",
+            "CARNIVAL of gains! 🎡",
+
+            // Innovation & Creativity
+            "They're INNOVATING on the fly! 💡",
+            "This is CREATIVE genius! 🎨",
+            "They're THINKING outside the box! 📦",
+            "REVOLUTIONARY moves here! 🔄",
+            "This is CUTTING-EDGE stuff! ✂️",
+            "They're PIONEERING new strategies! 🔍",
+            "INVENTIVE play right here! 🎯",
+            "This is NEXT-GEN action! 🤖",
+            "They're BREAKING new ground! 🏗️",
+            "INNOVATIVE spirit on display! 💫",
+
+            // Determination & Focus
+            "They're LOCKED IN and focused! 🎯",
+            "This is PURE DETERMINATION! 💪",
+            "They're GIVING IT THEIR ALL! 🔥",
+            "UNWAVERING commitment! ⚓",
+            "This is LASER FOCUS! 🔦",
+            "They're PUSHING THE LIMITS! 🚀",
+            "RELENTLESS pursuit of excellence! 🏃‍♂️",
+            "This is MAXIMUM EFFORT! 💯",
+            "They're GOING THE DISTANCE! 🏃‍♀️",
+            "FULL THROTTLE ahead! 🏎️",
+
+            // Victory & Success
+            "They're TASTING victory! 🏆",
+            "This is SUCCESS in motion! 🎯",
+            "They're CLAIMING their crown! 👑",
+            "TRIUMPH on display! 🎊",
+            "This is WINNING at its finest! 🥇",
+            "They're SEIZING THE DAY! ☀️",
+            "VICTORY is within reach! 🎯",
+            "This is CHAMPION behavior! 🏅",
+            "They're MAKING IT COUNT! 💯",
+            "SUCCESS is in the air! 🌟"
         ];
 
         const neutralComments = [
-            "We've got ourselves a real CHESS MATCH here, folks! ♟️",
-            "Both bulls and bears showing RESPECT for each other! 🤝",
-            "This is anyone's game right now! 🎲",
-            "They're feeling each other out, looking for an opening! 👀",
-            "The tension is PALPABLE! 😤",
-            "This is what we call a STRATEGIC battle! 🧠",
-            "They're playing the long game here, folks! ⏳",
-            "Every move counts in this situation! ⚖️",
-            "We're seeing some VETERAN moves here! 🎯",
-            "This is a CLASSIC matchup unfolding! 🏛️"
+            // Strategic Patience
+            "We've got a TACTICAL standoff here! 🎯",
+            "Both sides FEELING each other out! 👀",
+            "This is CHESS not checkers, folks! ♟️",
+            "STRATEGIC positioning at play! 🎪",
+            "They're BIDING their time! ⏳",
+            "This is CALCULATED patience! 🧮",
+            "METHODICAL approach today! 📏",
+            "They're STUDYING the patterns! 📚",
+            "This is STRATEGIC warfare! ⚔️",
+            "CAREFUL maneuvering here! 🚶‍♂️",
+
+            // Market Balance
+            "Perfect BALANCE in the market! ⚖️",
+            "We're seeing EQUILIBRIUM! 🎭",
+            "This is MARKET harmony! 🎵",
+            "STEADY as she goes! ⛵",
+            "They're HOLDING the line! 〽️",
+            "This is STABLE ground! 🏔️",
+            "BALANCED forces at work! 🔄",
+            "They're MAINTAINING position! 🎯",
+            "This is CONTROLLED action! 🎮",
+            "STEADY hands prevail! 🤝",
+
+            // Anticipation
+            "The TENSION is building! 🎭",
+            "We're in the CALM before the storm! 🌅",
+            "This is ANTICIPATION at its peak! 📈",
+            "They're WAITING for the right moment! ⏰",
+            "SUSPENSE in the air! 🎪",
+            "This is EDGE OF YOUR SEAT stuff! 💺",
+            "DRAMATIC pause in action! 🎬",
+            "They're TIMING their move! ⌚",
+            "This is CALCULATED waiting! 🧮",
+            "PATIENCE is key here! 🔑",
+
+            // Technical Analysis
+            "TECHNICAL battle unfolding! 📊",
+            "We're seeing PATTERN formation! 📈",
+            "This is CHART analysis time! 📉",
+            "They're READING the signals! 📡",
+            "INDICATOR watching game! 🔍",
+            "This is TECHNICAL warfare! ⚔️",
+            "PATTERN recognition key! 🧩",
+            "They're ANALYZING trends! 📋",
+            "This is DATA-DRIVEN action! 💻",
+            "MATHEMATICAL precision! 🔢",
+
+            // Market Psychology
+            "PSYCHOLOGICAL warfare here! 🧠",
+            "We're testing MENTAL strength! 💪",
+            "They're in the ZONE and loving it! 🎯",
+            "PICTURE PERFECT performance! 🖼️",
+            "This is how LEGENDS are made! 👑",
+            "They're CRUSHING it out there! 🔨",
+            "A CLINIC in market dominance! 🏫",
+            "They've done their HOMEWORK and it shows! 📝",
+            "This is CALCULATED aggression! 🧮",
+            "MASTERFUL strategy on display! 🧠",
+
+            // Team Spirit & Support
+            "The WHOLE TEAM is firing on all cylinders! 🏎️",
+            "Look at that COMMUNITY support! 🤝",
+            "They're RALLYING the troops! 📢",
+            "This is TEAM SPIRIT at its finest! 🌟",
+            "The MOMENTUM is contagious! 🦠",
+            "Everyone's WORKING TOGETHER! 🤼",
+            "This is UNITY in action! 🔄",
+            "The SYNERGY is incredible! ⚡",
+            "They're ALL IN this together! 🎲",
+            "COLLECTIVE effort paying off! 🎪",
+
+            // Breaking Records
+            "They're SHATTERING expectations! 💥",
+            "Record books? REWRITE THEM! 📚",
+            "This is UNPRECEDENTED stuff! 🎇",
+            "They're BREAKING all the records! 📊",
+            "HISTORIC movement happening! 🏛️",
+            "This is GROUNDBREAKING action! 🏗️",
+            "They're setting NEW STANDARDS! 📏",
+            "BENCHMARK performance right here! 📈",
+            "This is NEXT LEVEL stuff! 🆙",
+            "They're RAISING THE BAR! 🏋️‍♂️",
+
+            // Market Impact
+            "They're DOMINATING the field! 🏅",
+            "This is MARKET-MOVING action! 📊",
+            "They're LEADING the charge! ⚔️",
+            "IMPRESSIVE display of strength! 💪",
+            "This is GAME-CHANGING movement! 🎮",
+            "They're SETTING THE PACE! 🏃‍♂️",
+            "POWERFUL performance today! ⚡",
+            "This is TREND-SETTING stuff! 📈",
+            "They're MAKING WAVES! 🌊",
+            "INFLUENTIAL moves happening! 🎯",
+
+            // Celebration & Joy
+            "The crowd goes WILD! 🎉",
+            "This is CELEBRATION time! 🎊",
+            "They're DANCING in the streets! 💃",
+            "VICTORY lap incoming! 🏎️",
+            "This is PARTY time! 🎈",
+            "They're LOVING life right now! 😊",
+            "JUBILATION in the air! 🎭",
+            "This is FESTIVAL atmosphere! 🎪",
+            "They're RIDING HIGH! 🎢",
+            "CARNIVAL of gains! 🎡",
+
+            // Innovation & Creativity
+            "They're INNOVATING on the fly! 💡",
+            "This is CREATIVE genius! 🎨",
+            "They're THINKING outside the box! 📦",
+            "REVOLUTIONARY moves here! 🔄",
+            "This is CUTTING-EDGE stuff! ✂️",
+            "They're PIONEERING new strategies! 🔍",
+            "INVENTIVE play right here! 🎯",
+            "This is NEXT-GEN action! 🤖",
+            "They're BREAKING new ground! 🏗️",
+            "INNOVATIVE spirit on display! 💫",
+
+            // Determination & Focus
+            "They're LOCKED IN and focused! 🎯",
+            "This is PURE DETERMINATION! 💪",
+            "They're GIVING IT THEIR ALL! 🔥",
+            "UNWAVERING commitment! ⚓",
+            "This is LASER FOCUS! 🔦",
+            "They're PUSHING THE LIMITS! 🚀",
+            "RELENTLESS pursuit of excellence! 🏃‍♂️",
+            "This is MAXIMUM EFFORT! 💯",
+            "They're GOING THE DISTANCE! 🏃‍♀️",
+            "FULL THROTTLE ahead! 🏎️",
+
+            // Victory & Success
+            "They're TASTING victory! 🏆",
+            "This is SUCCESS in motion! 🎯",
+            "They're CLAIMING their crown! 👑",
+            "TRIUMPH on display! 🎊",
+            "This is WINNING at its finest! 🥇",
+            "They're SEIZING THE DAY! ☀️",
+            "VICTORY is within reach! 🎯",
+            "This is CHAMPION behavior! 🏅",
+            "They're MAKING IT COUNT! 💯",
+            "SUCCESS is in the air! 🌟"
         ];
 
         const negativeComments = [

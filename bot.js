@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, AttachmentBuilder, REST, Routes, SlashCommand
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const schedule = require('node-schedule');
 const OpenAI = require('openai');
+const sharp = require('sharp');
 
 class CryptoCommentator {
     constructor() {
@@ -21,8 +22,8 @@ class CryptoCommentator {
             backgroundColour: '#000000'
         });
 
-        this.commentatorWidth = 60;  // 1/4 of chart width
-        this.commentatorHeight = 30; // 1/4 of chart height
+        this.commentatorWidth = 120;  // Width in pixels
+        this.commentatorHeight = 75; // Height in pixels
 
         this.priceHistory = {
             timestamps: [],
@@ -271,6 +272,21 @@ Duration: ${duration} minutes
         await this.registerCommands();
     }
 
+    async resizeCommentatorImage() {
+        try {
+            const resized = await sharp('./images/des.jpeg')
+                .resize(this.commentatorWidth, this.commentatorHeight, {
+                    fit: 'contain',
+                    background: { r: 0, g: 0, b: 0, alpha: 0 }
+                })
+                .toBuffer();
+            return resized;
+        } catch (error) {
+            console.error('Error resizing commentator image:', error);
+            return null;
+        }
+    }
+
     async sendUpdate() {
         try {
             const channel = await this.client.channels.fetch(this.channelId);
@@ -278,9 +294,15 @@ Duration: ${duration} minutes
             const chartBuffer = await this.generateChart(priceData);
             const commentary = this.generateCommentary(priceData);
 
+            // Resize commentator image
+            const resizedCommentator = await this.resizeCommentatorImage();
+
             // Create attachments
             const chartAttachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
-            const commentaryAttachment = new AttachmentBuilder('./images/des.jpeg');
+            const commentaryAttachment = new AttachmentBuilder(
+                resizedCommentator || './images/des.jpeg', // Fallback to original if resize fails
+                { name: 'des.jpeg' }
+            );
 
             // First send the chart with stats
             await channel.send({

@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, AttachmentBuilder, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const schedule = require('node-schedule');
+const OpenAI = require('openai');
 
 class CryptoCommentator {
     constructor() {
@@ -20,10 +21,20 @@ class CryptoCommentator {
             backgroundColour: '#000000'
         });
 
+        this.commentatorWidth = 60;  // 1/4 of chart width
+        this.commentatorHeight = 30; // 1/4 of chart height
+
         this.priceHistory = {
             timestamps: [],
-            prices: []
+            prices: [],
+            movements: []
         };
+
+        // Add P&L tracking
+        this.initialInvestment = 10; // $10 USD
+        this.entryPrice = null;
+        this.currentValue = null;
+        this.pnlHistory = [];
 
         // Add commands collection to track slash commands
         this.commands = [
@@ -51,6 +62,11 @@ class CryptoCommentator {
         this.updateInterval = '*/1 * * * *';
         this.updateJob = null;
 
+        // Initialize OpenAI with new syntax
+        this.openai = new OpenAI({
+            apiKey: process.env.OPEN_AI_KEY
+        });
+
         this.setupBot();
         this.setupCommands();
     }
@@ -58,6 +74,12 @@ class CryptoCommentator {
     setupBot() {
         this.client.once('ready', () => {
             console.log('Crypto Commentator is LIVE! 🎙️');
+        });
+
+        // Add message handler
+        this.client.on('messageCreate', async message => {
+            if (message.author.bot) return;
+            await this.handleInteraction(message);
         });
     }
 
@@ -88,6 +110,32 @@ class CryptoCommentator {
                     const address = interaction.options.getString('address');
                     
                     try {
+                        // First, acknowledge the command immediately
+                        await interaction.deferReply();
+
+                        // Validate the address
+                        if (!address || !address.trim()) {
+                            await interaction.editReply('❌ Please provide a valid token address!');
+                            return;
+                        }
+
+                        this.tokenSymbol = address.trim();
+                        this.channelId = interaction.channelId;
+                        
+                        // Test fetch price data
+                        try {
+                            const initialPriceData = await this.fetchPriceData();
+                            this.entryPrice = initialPriceData.price;
+                            this.currentValue = this.initialInvestment;
+                            this.pnlHistory = [];
+                        } catch (error) {
+                            console.error('Error fetching initial price data:', error);
+                            await interaction.editReply('❌ Could not fetch price data for this token. Please check the address and try again!');
+                            this.tokenSymbol = null;
+                            this.channelId = null;
+                            return;
+                        }
+
                         // Generate opening message
                         const openingMessages = [
                             "🎭 LADIES AND GENTLEMEN! In the red corner, we have a DEGEN with nothing but HOPES AND DREAMS! In the blue corner, the undefeated champion: CRUSHING MARKET REALITY! 🥊",
@@ -110,19 +158,24 @@ ${openingMessage}
 
 📊 **TOKEN ADDRESS**: \`${address}\`
 ⏰ **STARTING TIME**: ${new Date().toLocaleString()}
-🎯 **MISSION**: Turn hopium into generational wealth
+
+🎮 **THE RULES OF THE GAME**:
+• Initial Bet: $10 USD goes in at market open
+• Win Condition: 20x or BUST - no in-betweens!
+• Stop Loss: We don't do that here 🚫
+• Duration: One ticket per day, may the odds be ever in our favor
+• Strategy: Pure, unfiltered HODL energy 💎🙌
+
+🎯 **MISSION**: Turn $10 into $200 or into a valuable lesson about life
 🏆 **ODDS**: Better than zero, worse than you think
+⚠️ **RISK**: Yes.
 
 *Grab your popcorn folks, this is going to be a wild ride!* 🍿
+
+_This is not financial advice. This is financial entertainment._ 😎
                         `);
                         
                         await initialMessage.pin();
-                        
-                        // Now send the start confirmation
-                        await interaction.reply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! Updates every minute! LET'S GET THIS PARTY STARTED! 🎉`);
-                        
-                        this.tokenSymbol = address;
-                        this.channelId = interaction.channelId;
                         
                         // Clear any existing update job
                         if (this.updateJob) {
@@ -139,6 +192,9 @@ ${openingMessage}
                                 }
                             }
                         });
+                        
+                        // Confirm command completion using editReply instead of reply
+                        await interaction.editReply(`🎙️ ALRIGHT FOLKS! Starting to track Solana token ${address} in this channel! Updates every minute! LET'S GET THIS PARTY STARTED! 🎉`);
                         
                         // Send first update immediately
                         await this.sendUpdate();
@@ -160,6 +216,10 @@ ${openingMessage}
                         return;
                     }
 
+                    const finalPnL = ((this.currentValue / this.initialInvestment - 1) * 100).toFixed(2);
+                    const finalValue = this.formatUSD(this.currentValue);
+                    const duration = Math.floor((Date.now() - this.pnlHistory[0].timestamp) / 1000 / 60); // minutes
+
                     const oldToken = this.tokenSymbol;
                     this.tokenSymbol = null;
                     this.channelId = null;
@@ -173,10 +233,17 @@ ${openingMessage}
                     // Clear price history
                     this.priceHistory = {
                         timestamps: [],
-                        prices: []
+                        prices: [],
+                        movements: []
                     };
 
-                    await interaction.reply(`🎙️ THAT'S ALL FOLKS! Stopped tracking ${oldToken}! Thanks for tuning in! 👋`);
+                    await interaction.reply(`🎙️ **FINAL RESULTS**
+Initial Investment: ${this.formatUSD(this.initialInvestment)}
+Final Value: ${finalValue}
+Return: ${finalPnL}%
+Duration: ${duration} minutes
+
+🎙️ THAT'S ALL FOLKS! Stopped tracking ${oldToken}! Thanks for tuning in! 👋`);
                     break;
             }
         });
@@ -206,83 +273,74 @@ ${openingMessage}
 
     async sendUpdate() {
         try {
-            // First verify we can access the channel
-            let channel;
-            try {
-                channel = await this.client.channels.fetch(this.channelId);
-                
-                // Check if we have the required permissions
-                const permissions = channel.permissionsFor(this.client.user);
-                if (!permissions || !permissions.has(['ViewChannel', 'SendMessages', 'AttachFiles'])) {
-                    console.error(`Missing required permissions in channel ${this.channelId}`);
-                    await channel.send('❌ I need permissions to view channel, send messages, and attach files!');
-                    return;
-                }
-            } catch (error) {
-                console.error(`Cannot access channel ${this.channelId}:`, error);
-                // Reset tracking since we can't access the channel
-                this.tokenSymbol = null;
-                this.channelId = null;
-                return;
-            }
-
+            const channel = await this.client.channels.fetch(this.channelId);
             const priceData = await this.fetchPriceData();
             const chartBuffer = await this.generateChart(priceData);
             const commentary = this.generateCommentary(priceData);
 
-            const attachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
+            // Create attachments
+            const chartAttachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
+            const commentaryAttachment = new AttachmentBuilder('./images/des.jpeg');
 
+            // First send the chart with stats
             await channel.send({
-                content: commentary,
-                files: [attachment]
+                content: `🎙️ **${priceData.name}** @ ${this.formatUSD(priceData.price)}\n${commentary.stats}`,
+                files: [chartAttachment]
             });
+
+            // Then send the commentator with quote
+            await channel.send({
+                content: `> *"${this.generateExcitingComment(priceData)}"*`,
+                files: [commentaryAttachment]
+            });
+
         } catch (error) {
             console.error('Error sending update:', error);
-            if (error.code === 50001 || error.code === 50013) {
-                console.error('Bot lacks required permissions - stopping tracking');
-                this.tokenSymbol = null;
-                this.channelId = null;
-            }
         }
     }
 
     async fetchPriceData() {
         try {
-            const formattedToken = this.tokenSymbol.trim();
-            console.log(`Fetching data for token: ${formattedToken}`);
-            
-            const url = `https://app.geckoterminal.com/api/p1/solana/pools/${formattedToken}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            if (data.errors) {
-                throw new Error(`Token not found on GeckoTerminal: ${data.errors[0]?.title || 'Unknown error'}`);
+            if (!this.tokenSymbol) {
+                throw new Error('No token symbol set');
             }
 
+            const address = this.tokenSymbol.trim();
+            const response = await fetch(`https://app.geckoterminal.com/api/p1/solana/pools/${address}`);
+            
+            if (!response.ok) {
+                throw new Error(`GeckoTerminal API error: ${response.status}`);
+            }
+
+            const data = await response.json();
             const attributes = data.data.attributes;
-            const priceChanges = attributes.price_percent_changes || {};
-            const historicalData = attributes.historical_data || {};
+            
+            // Get the historical data for the last hour
+            const lastHourData = attributes.historical_data.last_1h;
             
             return {
                 name: attributes.name,
                 price: parseFloat(attributes.price_in_usd),
-                priceChange24h: attributes.price_percent_change,
-                volume24h: attributes.from_volume_in_usd,
-                fdv: attributes.fully_diluted_valuation,
-                reserveUSD: attributes.reserve_in_usd,
-                swapCount24h: attributes.swap_count_24h,
-                sentiment: attributes.sentiment_votes,
+                volume24h: parseFloat(attributes.historical_data.last_24h.volume_in_usd),
                 changes: {
-                    '5m': priceChanges.last_5m,
-                    '15m': priceChanges.last_15m,
-                    '30m': priceChanges.last_30m,
-                    '1h': priceChanges.last_1h,
-                    '6h': priceChanges.last_6h,
-                    '24h': priceChanges.last_24h
+                    '5m': attributes.price_percent_changes.last_5m,
+                    '15m': attributes.price_percent_changes.last_15m,
+                    '1h': attributes.price_percent_changes.last_1h,
+                    '6h': attributes.price_percent_changes.last_6h,
+                    '24h': attributes.price_percent_changes.last_24h
                 },
-                stats24h: historicalData.last_24h,
-                stats1h: historicalData.last_1h,
-                gtScore: attributes.gt_score
+                swapCount24h: attributes.historical_data.last_24h.swaps_count,
+                stats24h: {
+                    buyers_count: attributes.historical_data.last_24h.buyers_count,
+                    sellers_count: attributes.historical_data.last_24h.sellers_count
+                },
+                gtScore: attributes.gt_score,
+                fdv: parseFloat(attributes.fully_diluted_valuation),
+                reserveUSD: parseFloat(attributes.reserve_in_usd),
+                sentiment: {
+                    up_percentage: attributes.sentiment_votes.up_percentage,
+                    total: attributes.sentiment_votes.total
+                }
             };
         } catch (error) {
             console.error('Error fetching price data:', error);
@@ -291,105 +349,36 @@ ${openingMessage}
     }
 
     generateCommentary(priceData) {
-        // Format numbers for better readability
-        const formatUSD = (num) => `$${parseFloat(num).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
         const formatPercent = (str) => str ? str.replace('%', '') + '%' : '0%';
         
-        const commentary = `🎙️ **${priceData.name}** @ ${formatUSD(priceData.price)}
+        // Calculate P&L
+        const currentTokens = this.initialInvestment / this.entryPrice;
+        this.currentValue = currentTokens * priceData.price;
+        const pnlAmount = this.currentValue - this.initialInvestment;
+        const pnlPercent = ((this.currentValue / this.initialInvestment - 1) * 100).toFixed(2);
+        
+        // Track P&L history
+        this.pnlHistory.push({
+            timestamp: new Date(),
+            value: this.currentValue,
+            pnlPercent: parseFloat(pnlPercent)
+        });
 
+        const stats = `\`\`\`
+Price Changes | Trading (24h)      | P&L Status
+------------- | -------------      | ----------
+5m:  ${formatPercent(priceData.changes['5m']).padEnd(8)} | Vol:  ${this.formatUSD(priceData.volume24h)} | Current: ${this.formatUSD(this.currentValue)}
+15m: ${formatPercent(priceData.changes['15m']).padEnd(8)} | Swaps: ${priceData.swapCount24h.toLocaleString()} | P&L: ${pnlAmount >= 0 ? '+' : ''}${this.formatUSD(pnlAmount)}
+1h:  ${formatPercent(priceData.changes['1h']).padEnd(8)} | Buys: ${priceData.stats24h.buyers_count.toLocaleString()}  | Return: ${pnlPercent}%
+6h:  ${formatPercent(priceData.changes['6h']).padEnd(8)} | Sells: ${priceData.stats24h.sellers_count.toLocaleString()} | Target: 2000%
+24h: ${formatPercent(priceData.changes['24h']).padEnd(8)} | Score: ${priceData.gtScore.toFixed(1)}/100 | Entry: ${this.formatUSD(this.entryPrice)}
 \`\`\`
-Price Changes | Trading (24h)
-------------- | -------------
-5m:  ${formatPercent(priceData.changes['5m']).padEnd(8)} | Vol:  ${formatUSD(priceData.volume24h)}
-15m: ${formatPercent(priceData.changes['15m']).padEnd(8)} | Swaps: ${priceData.swapCount24h.toLocaleString()}
-1h:  ${formatPercent(priceData.changes['1h']).padEnd(8)} | Buys: ${priceData.stats24h.buyers_count.toLocaleString()}
-6h:  ${formatPercent(priceData.changes['6h']).padEnd(8)} | Sells: ${priceData.stats24h.sellers_count.toLocaleString()}
-24h: ${formatPercent(priceData.changes['24h']).padEnd(8)} | Score: ${priceData.gtScore.toFixed(1)}/100
-\`\`\`
-💎 FDV: ${formatUSD(priceData.fdv)} | 🌊 Liq: ${formatUSD(priceData.reserveUSD)} | 🗳️ Sentiment: ${priceData.sentiment.up_percentage.toFixed(1)}% (${priceData.sentiment.total} votes)
+💎 FDV: ${this.formatUSD(priceData.fdv)} | 🌊 Liq: ${this.formatUSD(priceData.reserveUSD)} | 🗳️ Sentiment: ${priceData.sentiment.up_percentage.toFixed(1)}% (${priceData.sentiment.total} votes)`;
 
-${this.generateExcitingComment(priceData)}`;
-
-        return commentary;
-    }
-
-    generateExcitingComment(priceData) {
-        const positiveComments = [
-            "BOOM! What a move folks! This is the kind of action we live for! 🚀",
-            "They're on FIRE! You can't teach this kind of momentum! 🔥",
-            "Ladies and gentlemen, we are witnessing GREATNESS! 👑",
-            "This is what champions are made of! Absolutely ELECTRIC performance! ⚡",
-            "They've done their homework and it's PAYING OFF! 📚",
-            "The crowd is going WILD! Can you feel the energy?! 🎉",
-            "That's what I call EXECUTING THE GAMEPLAN! 📋",
-            "They're making it look EASY out there! 💪",
-            "This is a MASTERCLASS in price action! 📈",
-            "They came to PLAY today, folks! 🎯",
-            "UNSTOPPABLE! They're in a league of their own! 🏆",
-            "This is TEXTBOOK execution! Beautiful to watch! 📖",
-            "They're COOKING with gas now! 🔥",
-            "The momentum is UNDENIABLE! 🌊",
-            "What a SPECTACULAR display of strength! 💪"
-        ];
-
-        const neutralComments = [
-            "We've got ourselves a real CHESS MATCH here, folks! ♟️",
-            "Both bulls and bears showing RESPECT for each other! 🤝",
-            "This is anyone's game right now! 🎲",
-            "They're feeling each other out, looking for an opening! 👀",
-            "The tension is PALPABLE! 😤",
-            "This is what we call a STRATEGIC battle! 🧠",
-            "They're playing the long game here, folks! ⏳",
-            "Every move counts in this situation! ⚖️",
-            "We're seeing some VETERAN moves here! 🎯",
-            "This is a CLASSIC matchup unfolding! 🏛️",
-            "The plot thickens! What a fascinating development! 🎭",
-            "Both sides showing tremendous DISCIPLINE! 📊",
-            "This is a TEXTBOOK trading range! 📐",
-            "The market is taking a breather, but stay tuned! ⏸️",
-            "We're at a crucial DECISION POINT! 🔄"
-        ];
-
-        const negativeComments = [
-            "OUCH! That's gonna leave a mark! 🤕",
-            "They're on the ropes, but don't count them out yet! 🥊",
-            "This is a TEST OF CHARACTER right here! 💪",
-            "They're in UNFAMILIAR TERRITORY! Can they adjust? 🗺️",
-            "This is where champions show their RESILIENCE! 🛡️",
-            "They're taking some HEAVY HITS, but still standing! 🥊",
-            "This is a GUT CHECK moment! 😤",
-            "They need to WEATHER THE STORM! ⛈️",
-            "Time to dig DEEP and show what they're made of! ⛏️",
-            "This is where LEGENDS are born, folks! 🌟",
-            "They're down but not out! Never count out a champion! 👊",
-            "This is when you earn your stripes! 🦓",
-            "Sometimes you need to take a step back to leap forward! 🦘",
-            "They're in survival mode, but that's when they're most dangerous! 🐯",
-            "This is CHARACTER BUILDING time! 🏗️"
-        ];
-
-        const extremeComments = [
-            "I CAN'T BELIEVE WHAT I'M SEEING! This is UNPRECEDENTED! 🤯",
-            "HOLY SMOKES! This will go down in the history books! 📚",
-            "GREAT GOOGLY MOOGLY! Have you ever seen anything like this?! 😱",
-            "STOP THE PRESSES! This is one for the ages! 🗞️",
-            "MY WORD! This is why you never leave your seat, folks! 💺"
-        ];
-
-        // Calculate price change percentage from 5m data
-        const priceChange = parseFloat(priceData.changes['5m']?.replace('%', '') || 0);
-
-        // Select comment based on price action
-        if (Math.abs(priceChange) > 10) {
-            // Extreme moves get special comments
-            return extremeComments[Math.floor(Math.random() * extremeComments.length)];
-        } else if (priceChange > 2) {
-            return positiveComments[Math.floor(Math.random() * positiveComments.length)];
-        } else if (priceChange < -2) {
-            return negativeComments[Math.floor(Math.random() * negativeComments.length)];
-        } else {
-            return neutralComments[Math.floor(Math.random() * neutralComments.length)];
-        }
+        return {
+            stats: stats,
+            imagePath: './images/des.jpeg'
+        };
     }
 
     async generateChart(priceData) {
@@ -398,27 +387,27 @@ ${this.generateExcitingComment(priceData)}`;
         this.priceHistory.timestamps.push(timestamp);
         this.priceHistory.prices.push(priceData.price);
 
-        // Keep only last 24 hours of data (288 5-minute intervals)
+        // Calculate and store movement for the new segment
+        if (this.priceHistory.prices.length >= 2) {
+            const lastPrice = this.priceHistory.prices[this.priceHistory.prices.length - 1];
+            const previousPrice = this.priceHistory.prices[this.priceHistory.prices.length - 2];
+            let movement;
+            if (lastPrice > previousPrice) {
+                movement = 'up';
+            } else if (lastPrice < previousPrice) {
+                movement = 'down';
+            } else {
+                movement = 'same';
+            }
+            this.priceHistory.movements.push(movement);
+        }
+
+        // Keep only last 24 hours of data
         const MAX_POINTS = 288;
         if (this.priceHistory.timestamps.length > MAX_POINTS) {
             this.priceHistory.timestamps.shift();
             this.priceHistory.prices.shift();
-        }
-
-        // Determine color based on last price movement
-        let lineColor;
-        if (this.priceHistory.prices.length >= 2) {
-            const lastPrice = this.priceHistory.prices[this.priceHistory.prices.length - 1];
-            const previousPrice = this.priceHistory.prices[this.priceHistory.prices.length - 2];
-            if (lastPrice > previousPrice) {
-                lineColor = '#00ff00'; // Green
-            } else if (lastPrice < previousPrice) {
-                lineColor = '#ff0000'; // Red
-            } else {
-                lineColor = '#ffff00'; // Yellow
-            }
-        } else {
-            lineColor = '#00ff00'; // Default to green
+            this.priceHistory.movements.shift();
         }
 
         const configuration = {
@@ -432,28 +421,24 @@ ${this.generateExcitingComment(priceData)}`;
                     data: this.priceHistory.prices,
                     segment: {
                         borderColor: ctx => {
-                            // Color only the last segment
-                            if (ctx.p1DataIndex === this.priceHistory.prices.length - 2) {
-                                return lineColor;
+                            // Use the stored movement for this segment
+                            const segmentIndex = ctx.p0DataIndex;
+                            if (segmentIndex < this.priceHistory.movements.length) {
+                                const movement = this.priceHistory.movements[segmentIndex];
+                                if (movement === 'up') {
+                                    return '#00ff00'; // Green
+                                } else if (movement === 'down') {
+                                    return '#ff0000'; // Red
+                                } else {
+                                    return '#ffff00'; // Yellow
+                                }
                             }
-                            return '#00ff00'; // Default color for other segments
+                            return '#00ff00'; // Default color
                         }
                     },
                     backgroundColor: '#00ff00',
-                    pointBackgroundColor: ctx => {
-                        // Color the last point based on movement
-                        if (ctx.dataIndex === this.priceHistory.prices.length - 1) {
-                            return lineColor;
-                        }
-                        return '#00ff00';
-                    },
-                    pointBorderColor: ctx => {
-                        // Color the last point based on movement
-                        if (ctx.dataIndex === this.priceHistory.prices.length - 1) {
-                            return lineColor;
-                        }
-                        return '#00ff00';
-                    },
+                    pointBackgroundColor: '#00ff00',
+                    pointBorderColor: '#00ff00',
                     tension: 0.1,
                     fill: false,
                     borderWidth: 2,
@@ -505,15 +490,6 @@ ${this.generateExcitingComment(priceData)}`;
             }
         };
 
-        // Make sure chartGenerator is initialized with black background
-        if (!this.chartGenerator) {
-            this.chartGenerator = new ChartJSNodeCanvas({
-                width: 800,
-                height: 400,
-                backgroundColour: '#000000'
-            });
-        }
-
         return this.chartGenerator.renderToBuffer(configuration);
     }
 
@@ -528,7 +504,99 @@ ${this.generateExcitingComment(priceData)}`;
         return true;
     }
 
-    //
+    // Add formatUSD as a class method
+    formatUSD(num) {
+        return `$${parseFloat(num).toLocaleString(undefined, { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 6 
+        })}`;
+    }
+
+    generateExcitingComment(priceData) {
+        const positiveComments = [
+            "BOOM! What a move folks! This is the kind of action we live for! 🚀",
+            "They're on FIRE! You can't teach this kind of momentum! 🔥",
+            "Ladies and gentlemen, we are witnessing GREATNESS! 👑",
+            "This is what champions are made of! Absolutely ELECTRIC performance! ⚡",
+            "They've done their homework and it's PAYING OFF! 📚",
+            "The crowd is going WILD! Can you feel the energy?! 🎉",
+            "That's what I call EXECUTING THE GAMEPLAN! 📋",
+            "They're making it look EASY out there! 💪",
+            "This is a MASTERCLASS in price action! 📈",
+            "They came to PLAY today, folks! 🎯"
+        ];
+
+        const neutralComments = [
+            "We've got ourselves a real CHESS MATCH here, folks! ♟️",
+            "Both bulls and bears showing RESPECT for each other! 🤝",
+            "This is anyone's game right now! 🎲",
+            "They're feeling each other out, looking for an opening! 👀",
+            "The tension is PALPABLE! 😤",
+            "This is what we call a STRATEGIC battle! 🧠",
+            "They're playing the long game here, folks! ⏳",
+            "Every move counts in this situation! ⚖️",
+            "We're seeing some VETERAN moves here! 🎯",
+            "This is a CLASSIC matchup unfolding! 🏛️"
+        ];
+
+        const negativeComments = [
+            "OUCH! That's gonna leave a mark! 🤕",
+            "They're on the ropes, but don't count them out yet! 🥊",
+            "This is a TEST OF CHARACTER right here! 💪",
+            "They're in UNFAMILIAR TERRITORY! Can they adjust? 🗺️",
+            "This is where champions show their RESILIENCE! 🛡️",
+            "They're taking some HEAVY HITS, but still standing! 🥊",
+            "This is a GUT CHECK moment! 😤",
+            "They need to WEATHER THE STORM! ⛈️",
+            "Time to dig DEEP and show what they're made of! ⛏️",
+            "This is where LEGENDS are born, folks! 🌟"
+        ];
+
+        // Calculate price change percentage from 5m data
+        const priceChange = parseFloat(priceData.changes['5m']?.replace('%', '') || 0);
+
+        // Select comment based on price action
+        let comments;
+        if (priceChange > 2) {
+            comments = positiveComments;
+        } else if (priceChange < -2) {
+            comments = negativeComments;
+        } else {
+            comments = neutralComments;
+        }
+
+        // Return a random comment from the selected array
+        return comments[Math.floor(Math.random() * comments.length)];
+    }
+
+    async handleInteraction(message) {
+        try {
+            if (!message.mentions.has(this.client.user) && 
+                (!message.reference || message.reference.author !== this.client.user.id)) {
+                return;
+            }
+
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-3.5-turbo",
+                messages: [{
+                    role: "system",
+                    content: `You are an enthusiastic crypto sports commentator known for witty banter and positive energy. 
+                    You're commenting on a $10 investment challenge where we either hit 20x or go to zero.
+                    Current message: "${message.content}"
+                    Respond in a fun, engaging way with sports commentary flair and emojis. Keep it brief and entertaining.`
+                }],
+                max_tokens: 150,
+                temperature: 0.8
+            });
+
+            const reply = response.choices[0].message.content;
+            await message.reply(reply);
+
+        } catch (error) {
+            console.error('Error handling interaction:', error);
+            await message.reply("WHOA FOLKS! Looks like I dropped the mic there for a second! 🎤 Technical timeout! 😅");
+        }
+    }
 }
 
 module.exports = CryptoCommentator; 

@@ -294,13 +294,21 @@ Duration: ${duration} minutes
             const chartBuffer = await this.generateChart(priceData);
             const commentary = this.generateCommentary(priceData);
 
-            // Resize commentator image
-            const resizedCommentator = await this.resizeCommentatorImage();
+            // Calculate P&L
+            const currentTokens = this.initialInvestment / this.entryPrice;
+            this.currentValue = currentTokens * priceData.price;
+            const pnlAmount = this.currentValue - this.initialInvestment;
+            const pnlPercent = ((this.currentValue / this.initialInvestment - 1) * 100).toFixed(2);
+
+            // Format P&L message with color
+            const pnlMessage = pnlAmount >= 0 
+                ? `\`\`\`diff\n+$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``
+                : `\`\`\`diff\n-$${Math.abs(pnlAmount).toFixed(2)} (${pnlPercent}%)\n\`\`\``;
 
             // Create attachments
             const chartAttachment = new AttachmentBuilder(chartBuffer, { name: 'chart.png' });
             const commentaryAttachment = new AttachmentBuilder(
-                resizedCommentator || './images/des.jpeg', // Fallback to original if resize fails
+                await this.resizeCommentatorImage() || './images/des.jpeg',
                 { name: 'des.jpeg' }
             );
 
@@ -310,9 +318,10 @@ Duration: ${duration} minutes
                 files: [chartAttachment]
             });
 
-            // Then send the commentator with quote
+            // Then send the commentator with quote and P&L
             await channel.send({
-                content: `> *"${this.generateExcitingComment(priceData)}"*`,
+                content: `> *"${this.generateExcitingComment(priceData)}"*
+${pnlMessage}`,
                 files: [commentaryAttachment]
             });
 
